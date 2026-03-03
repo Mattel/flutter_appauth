@@ -8,6 +8,8 @@
 
 #import <SafariServices/SafariServices.h>
 #import <AuthenticationServices/AuthenticationServices.h>
+#import <AppAuth/OIDAuthorizationRequest.h>
+#import <AppAuth/OIDEndSessionRequest.h>
 
 
 #if !TARGET_OS_MACCATALYST
@@ -74,26 +76,76 @@ NS_ASSUME_NONNULL_BEGIN
     if (!UIAccessibilityIsGuidedAccessEnabled()) {
       __weak OIDExternalUserAgentIOSNoSSO *weakSelf = self;
       NSString *redirectScheme = request.redirectScheme;
-      ASWebAuthenticationSession *authenticationVC =
-          [[ASWebAuthenticationSession alloc] initWithURL:requestURL
-                                        callbackURLScheme:redirectScheme
-                                        completionHandler:^(NSURL * _Nullable callbackURL,
-                                                            NSError * _Nullable error) {
-        __strong OIDExternalUserAgentIOSNoSSO *strongSelf = weakSelf;
-        if (!strongSelf) {
-            return;
-        }
-        strongSelf->_webAuthenticationVC = nil;
-        if (callbackURL) {
-          [strongSelf->_session resumeExternalUserAgentFlowWithURL:callbackURL];
+
+      // Shared completion handler for both HTTPS and custom scheme code paths
+      void (^completionHandler)(NSURL * _Nullable, NSError * _Nullable) =
+          ^(NSURL * _Nullable callbackURL, NSError * _Nullable error) {
+            __strong OIDExternalUserAgentIOSNoSSO *strongSelf = weakSelf;
+            if (!strongSelf) {
+                return;
+            }
+            strongSelf->_webAuthenticationVC = nil;
+            if (callbackURL) {
+              [strongSelf->_session resumeExternalUserAgentFlowWithURL:callbackURL];
+            } else {
+              NSError *safariError =
+                  [OIDErrorUtilities errorWithCode:OIDErrorCodeUserCanceledAuthorizationFlow
+                                   underlyingError:error
+                                       description:nil];
+              [strongSelf->_session failExternalUserAgentFlowWithError:safariError];
+            }
+          };
+
+      ASWebAuthenticationSession *authenticationVC;
+
+      // iOS 17.4+: Use claimed HTTPS URI callback when redirect scheme is "https".
+      // This uses ASWebAuthenticationSession.Callback.https(host:path:) which
+      // properly matches the full callback URL instead of just the scheme.
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 170400
+      if (@available(iOS 17.4, *)) {
+        if ([redirectScheme isEqualToString:@"https"]) {
+          // Extract the full redirect URL from the underlying request object.
+          // Cast based on concrete class since the protocol doesn't inherit from NSObject.
+          NSURL *redirectURL = nil;
+          if ([(NSObject *)request isKindOfClass:[OIDAuthorizationRequest class]]) {
+            redirectURL = [(OIDAuthorizationRequest *)request redirectURL];
+          } else if ([(NSObject *)request isKindOfClass:[OIDEndSessionRequest class]]) {
+            redirectURL = [(OIDEndSessionRequest *)request postLogoutRedirectURL];
+          }
+
+          if (redirectURL) {
+            ASWebAuthenticationSessionCallback *callback =
+                [ASWebAuthenticationSessionCallback
+                    callbackWithHTTPSHost:redirectURL.host
+                                    path:redirectURL.path];
+            authenticationVC =
+                [[ASWebAuthenticationSession alloc] initWithURL:requestURL
+                                                      callback:callback
+                                             completionHandler:completionHandler];
+          } else {
+            // Fallback if we couldn't extract the redirect URL
+            authenticationVC =
+                [[ASWebAuthenticationSession alloc] initWithURL:requestURL
+                                             callbackURLScheme:redirectScheme
+                                             completionHandler:completionHandler];
+          }
         } else {
-          NSError *safariError =
-              [OIDErrorUtilities errorWithCode:OIDErrorCodeUserCanceledAuthorizationFlow
-                               underlyingError:error
-                                   description:nil];
-          [strongSelf->_session failExternalUserAgentFlowWithError:safariError];
+          // Non-HTTPS scheme (custom URL scheme)
+          authenticationVC =
+              [[ASWebAuthenticationSession alloc] initWithURL:requestURL
+                                           callbackURLScheme:redirectScheme
+                                           completionHandler:completionHandler];
         }
-      }];
+      } else
+#endif
+      {
+        // iOS < 17.4, or older SDKs that don't expose iOS 17.4 callback APIs.
+        authenticationVC =
+            [[ASWebAuthenticationSession alloc] initWithURL:requestURL
+                                         callbackURLScheme:redirectScheme
+                                         completionHandler:completionHandler];
+      }
+
 #if __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000
       if (@available(iOS 13.0, *)) {
           authenticationVC.presentationContextProvider = self;
