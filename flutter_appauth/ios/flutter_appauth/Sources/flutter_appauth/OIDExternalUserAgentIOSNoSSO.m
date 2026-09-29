@@ -9,7 +9,6 @@
 #import "OIDExternalUserAgentIOSNoSSO.h"
 
 #import <AuthenticationServices/AuthenticationServices.h>
-#import <AppAuth/AppAuth.h>
 #import <SafariServices/SafariServices.h>
 
 #if !TARGET_OS_MACCATALYST
