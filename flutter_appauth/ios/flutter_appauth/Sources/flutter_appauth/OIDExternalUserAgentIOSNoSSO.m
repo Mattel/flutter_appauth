@@ -77,9 +77,9 @@ NS_ASSUME_NONNULL_BEGIN
     return nil;
   }
   NSString *path = redirectURL.path.length > 0 ? redirectURL.path : @"/";
-  return [ASWebAuthenticationSessionCallback
-      callbackWithHTTPSHost:redirectURL.host
-                       path:path];
+  return
+      [ASWebAuthenticationSessionCallback callbackWithHTTPSHost:redirectURL.host
+                                                           path:path];
 }
 
 - (BOOL)presentExternalUserAgentRequest:(id<OIDExternalUserAgentRequest>)request
@@ -103,30 +103,29 @@ NS_ASSUME_NONNULL_BEGIN
     // (rdar://40809553)
     if (!UIAccessibilityIsGuidedAccessEnabled()) {
       __weak OIDExternalUserAgentIOSNoSSO *weakSelf = self;
-      void (^completionHandler)(NSURL *_Nullable, NSError *_Nullable) =
-          ^(NSURL *_Nullable callbackURL, NSError *_Nullable error) {
-            __strong OIDExternalUserAgentIOSNoSSO *strongSelf = weakSelf;
-            if (!strongSelf) {
-              return;
-            }
-            strongSelf->_webAuthenticationVC = nil;
-            if (callbackURL) {
-              NSError *resumeError;
-              if (![strongSelf->_session
-                      resumeExternalUserAgentFlowWithURL:callbackURL
-                                                   error:&resumeError]) {
-                [strongSelf->_session
-                    failExternalUserAgentFlowWithError:resumeError];
-              }
-            } else {
-              NSError *safariError = [OIDErrorUtilities
-                    errorWithCode:OIDErrorCodeUserCanceledAuthorizationFlow
-                  underlyingError:error
-                      description:nil];
-              [strongSelf->_session
-                  failExternalUserAgentFlowWithError:safariError];
-            }
-          };
+      void (^completionHandler)(NSURL *_Nullable, NSError *_Nullable) = ^(
+          NSURL *_Nullable callbackURL, NSError *_Nullable error) {
+        __strong OIDExternalUserAgentIOSNoSSO *strongSelf = weakSelf;
+        if (!strongSelf) {
+          return;
+        }
+        strongSelf->_webAuthenticationVC = nil;
+        if (callbackURL) {
+          NSError *resumeError;
+          if (![strongSelf->_session
+                  resumeExternalUserAgentFlowWithURL:callbackURL
+                                               error:&resumeError]) {
+            [strongSelf->_session
+                failExternalUserAgentFlowWithError:resumeError];
+          }
+        } else {
+          NSError *safariError = [OIDErrorUtilities
+                errorWithCode:OIDErrorCodeUserCanceledAuthorizationFlow
+              underlyingError:error
+                  description:nil];
+          [strongSelf->_session failExternalUserAgentFlowWithError:safariError];
+        }
+      };
       ASWebAuthenticationSession *authenticationVC = nil;
       if (isHTTPSRedirect) {
         if (@available(iOS 17.4, *)) {
@@ -140,10 +139,10 @@ NS_ASSUME_NONNULL_BEGIN
           }
         }
       } else {
-        authenticationVC = [[ASWebAuthenticationSession alloc]
-                  initWithURL:requestURL
-            callbackURLScheme:redirectScheme
-            completionHandler:completionHandler];
+        authenticationVC =
+            [[ASWebAuthenticationSession alloc] initWithURL:requestURL
+                                          callbackURLScheme:redirectScheme
+                                          completionHandler:completionHandler];
       }
       if (authenticationVC) {
 #if __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000
